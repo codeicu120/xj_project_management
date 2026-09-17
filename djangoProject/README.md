@@ -12,7 +12,7 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 .venv/bin/python manage.py migrate
 .venv/bin/python manage.py createsuperuser
-.venv/bin/python manage.py runserver 127.0.0.1:8000
+w
 ```
 
 访问 http://127.0.0.1:8000/，系统管理入口为 `/admin/`。也可运行 `.venv/bin/python manage.py seed_demo` 创建演示账号和三个示例项目；命令输出随机密码，也支持 `--password` 显式设置。命令不会覆盖已存在的 demo 账号。演示中的 developer、tester 账号默认无可用密码，需要管理员配置后才能登录。
