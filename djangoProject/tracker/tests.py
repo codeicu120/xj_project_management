@@ -127,3 +127,26 @@ class WorkflowTests(TestCase):
         self.req.stage='5'; self.req.save(); self.client.force_login(self.user)
         response=self.client.post(f'/requirements/{self.req.pk}/bugs/new/',{'title':'界面异常','steps':'点击按钮','actual':'无响应','expected':'有响应','environment':'Chrome','discovered_version':'v1','severity':'normal','priority':'P2','owner':self.user.pk})
         self.assertEqual(response.status_code,302); bug=Bug.objects.get(); self.assertEqual(bug.test_record.round,1); self.assertEqual(bug.events.count(),1)
+
+class ProxyOriginTests(TestCase):
+    def test_https_origin_login_through_http_proxy(self):
+        from django.test import Client
+        User.objects.create_user('proxy-user', password='Proxy-password-2026')
+        client = Client(enforce_csrf_checks=True)
+        client.get('/login/', HTTP_HOST='project.xjdev.one')
+        response = client.post('/login/', {
+            'username': 'proxy-user',
+            'password': 'Proxy-password-2026',
+            'csrfmiddlewaretoken': client.cookies['csrftoken'].value,
+        }, HTTP_HOST='project.xjdev.one', HTTP_ORIGIN='https://project.xjdev.one')
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('_auth_user_id', client.session)
+
+    def test_untrusted_origin_still_rejected(self):
+        from django.test import Client
+        client = Client(enforce_csrf_checks=True)
+        client.get('/login/', HTTP_HOST='project.xjdev.one')
+        response = client.post('/login/', {
+            'csrfmiddlewaretoken': client.cookies['csrftoken'].value,
+        }, HTTP_HOST='project.xjdev.one', HTTP_ORIGIN='https://untrusted.example')
+        self.assertEqual(response.status_code, 403)

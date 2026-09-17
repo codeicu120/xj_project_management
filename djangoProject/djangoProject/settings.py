@@ -29,6 +29,15 @@ DEBUG = os.environ.get('DJANGO_DEBUG', '1') == '1'
 
 ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1,testserver,project.xjdev.one').split(',')
 
+# Browser HTTPS origins remain trusted when the reverse proxy uses HTTP upstream.
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get(
+        'DJANGO_CSRF_TRUSTED_ORIGINS', 'https://project.xjdev.one'
+    ).split(',')
+    if origin.strip()
+]
+
 
 # Application definition
 
