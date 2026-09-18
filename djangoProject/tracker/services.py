@@ -4,13 +4,8 @@ from django.conf import settings
 from .models import *
 from .forms import members
 
-STAGE_ROLES=['需求提起人','产品负责人','需求提起人','分配负责人','开发人员','测试负责人','需求提起人','开发人员','代码审核人','结项人']
-def allowed(user,project):
-    return user.is_active and (user.is_superuser or project.owner_id==user.pk or project.memberships.filter(user=user).exists())
-def has_role(user,project,roles):
-    return user.is_superuser or project.memberships.filter(user=user,role__in=roles).exists()
-def can_process(user,req):
-    return allowed(user,req.project) and (user.is_superuser or (req.owner_id==user.pk and (req.stage=='10' or has_role(user,req.project,[STAGE_ROLES[int(req.stage)]]))))
+from .permissions import STAGE_ROLES, allowed, has_role, can_process, requirement_actions, bug_actions
+
 def audit(user,project,action,detail): Audit.objects.create(actor=user,project=project,action=action,detail=detail)
 def notify(user,text,url): Notification.objects.create(user=user,text=text[:255],url=url)
 def validate_file(file):
@@ -29,6 +24,9 @@ def process(user,pk,data):
     if req.project.archived: raise ValidationError('项目已归档，只能查看历史记录。')
     if data['revision']!=req.records.count(): raise ValidationError('记录已更新，请刷新页面后重新处理。')
     action=data['action']; receiver=data.get('receiver'); file=data.get('file'); validate_file(file)
+    if action not in dict(requirement_actions(user,req)): raise ValidationError('当前状态不允许此需求操作。')
+    if action=='note' and receiver and receiver.pk!=req.owner_id: raise ValidationError('补充记录不能改变负责人，请使用转交操作。')
+    if not data.get('note','').strip(): raise ValidationError('请填写处理说明。')
     if action in ['advance','transfer'] and not receiver: raise ValidationError('请选择下一负责人。')
     if receiver and not members(req.project).filter(pk=receiver.pk).exists(): raise ValidationError('接收人必须是有效项目成员。')
     if req.stage=='10' and action!='note': raise ValidationError('已完成需求只能补充记录。')
@@ -64,6 +62,11 @@ def act_bug(user,pk,data):
     if req.project.archived: raise ValidationError('项目已归档。')
     if data['revision']!=bug.events.count(): raise ValidationError('Bug 已更新，请刷新后重试。')
     action=data['action']; receiver=data.get('receiver') or bug.owner
+    if action not in dict(bug_actions(user,bug)):
+        if action=='fix' and bug.status!='open' or action=='pass' and bug.status!='verify' or action=='fail' and bug.status not in ['verify','closed'] or action=='assign' and bug.status=='closed':
+            raise ValidationError('当前 Bug 状态不允许此操作。')
+        raise PermissionDenied('你没有执行此 Bug 操作的权限。')
+    if not data.get('note','').strip(): raise ValidationError('请填写处理说明。')
     if not members(req.project).filter(pk=receiver.pk).exists(): raise ValidationError('接收人必须是有效项目成员。')
     validate_file(data.get('file'))
     if action=='fix':

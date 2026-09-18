@@ -1,4 +1,6 @@
 from datetime import date
+from django.contrib import admin
+from .permissions import bug_actions, requirement_actions
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -17,7 +19,7 @@ def projects_for(user):
     qs=Project.objects.all()
     return qs if user.is_superuser else qs.filter(Q(owner=user)|Q(memberships__user=user)).distinct()
 def req_for(user): return Requirement.objects.filter(project__in=projects_for(user)).select_related('owner','project')
-def base(request): return {'nav_projects':projects_for(request.user),'unread':Notification.objects.filter(user=request.user,read=False).count()}
+def base(request): return {'can_access_admin': bool(admin.site.get_app_list(request)) if request.user.is_active and request.user.is_staff else False, 'nav_projects':projects_for(request.user),'unread':Notification.objects.filter(user=request.user,read=False).count()}
 def page(request,template,**context):
     query=request.GET.copy(); query.pop('page',None)
     return render(request,'tracker/'+template,{**base(request),'page_query':query.urlencode()+'&' if query else '',**context})
@@ -38,8 +40,20 @@ def filter_requirements(request,qs):
     return qs
 @login_required
 def dashboard(request):
-    qs=req_for(request.user); bugs=Bug.objects.filter(requirement__in=qs)
-    return page(request,'dashboard.html',active='dashboard',total=qs.count(),pending=qs.filter(owner=request.user).exclude(stage='10').count(),overdue=qs.exclude(stage='10').filter(due_date__lt=timezone.localdate()).count(),open_bugs=bugs.exclude(status='closed').count(),todo=qs.filter(owner=request.user).exclude(stage='10')[:7],recent=Audit.objects.filter(project__in=projects_for(request.user)).select_related('actor')[:8],overdue_items=qs.exclude(stage='10').filter(due_date__lt=timezone.localdate())[:5],projects=projects_for(request.user)[:4])
+    qs=req_for(request.user)
+    bugs=Bug.objects.filter(requirement__in=qs).select_related('requirement__project','owner')
+    todo=qs.filter(owner=request.user,project__archived=False).exclude(stage='10')
+    bug_todo=[]
+    for bug in bugs.exclude(status='closed').filter(requirement__project__archived=False):
+        actions=dict(bug_actions(request.user,bug))
+        if (bug.owner_id==request.user.pk and 'fix' in actions) or 'pass' in actions:
+            bug_todo.append(bug)
+    return page(request,'dashboard.html',active='dashboard',total=qs.count(),
+        pending=todo.count()+len(bug_todo),requirement_pending=todo.count(),bug_pending=len(bug_todo),bug_todo=bug_todo,
+        overdue=qs.exclude(stage='10').filter(due_date__lt=timezone.localdate()).count(),
+        open_bugs=bugs.exclude(status='closed').count(),todo=todo[:7],
+        recent=Audit.objects.filter(project__in=projects_for(request.user)).select_related('actor')[:8],
+        overdue_items=qs.exclude(stage='10').filter(due_date__lt=timezone.localdate())[:5],projects=projects_for(request.user)[:4])
 @login_required
 def projects(request): return page(request,'projects.html',active='projects',projects=projects_for(request.user))
 @login_required
@@ -77,7 +91,7 @@ def requirement_create(request):
     return page(request,'form.html',active='requirements',title='提出新需求',subtitle='描述业务目标、处理规则和验收标准。选择项目后将刷新可选负责人。',form=form,project_selector=True)
 @login_required
 def requirement_detail(request,pk):
-    req=get_object_or_404(req_for(request.user),pk=pk); form=ProcessForm(request.POST or None,request.FILES or None,requirement=req)
+    req=get_object_or_404(req_for(request.user),pk=pk); form=ProcessForm(request.POST or None,request.FILES or None,requirement=req,user=request.user)
     if request.method=='POST' and form.is_valid():
         try:
             rec=process(request.user,pk,form.cleaned_data)
@@ -118,12 +132,12 @@ def bug_create(request,pk):
 @login_required
 def bug_detail(request,pk):
     bug=get_object_or_404(Bug.objects.select_related('requirement__project','owner'),pk=pk); project_access(request.user,bug.requirement.project)
-    form=BugActionForm(request.POST or None,request.FILES or None,bug=bug)
+    form=BugActionForm(request.POST or None,request.FILES or None,bug=bug,user=request.user)
     if request.method=='POST' and form.is_valid():
         try:
             act_bug(request.user,pk,form.cleaned_data); messages.success(request,'Bug 处理记录已保存。'); return redirect('bug_detail',pk=pk)
         except ValidationError as e: form.add_error(None,e)
-    return page(request,'bug.html',active='bugs',bug=bug,form=form,events=bug.events.select_related('actor','previous_owner','receiver').prefetch_related('attachments'))
+    return page(request,'bug.html',active='bugs',bug=bug,form=form,can_act_bug=bool(bug_actions(request.user,bug)),events=bug.events.select_related('actor','previous_owner','receiver').prefetch_related('attachments'))
 @login_required
 def attachment(request,pk):
     item=get_object_or_404(Attachment.objects.select_related('requirement__project'),pk=pk); project_access(request.user,item.requirement.project)
