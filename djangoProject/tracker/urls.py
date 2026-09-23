@@ -1,3 +1,30 @@
 from django.urls import path
-from . import views
-urlpatterns=[path('',views.dashboard,name='dashboard'),path('projects/',views.projects,name='projects'),path('projects/new/',views.project_create,name='project_create'),path('projects/<int:pk>/',views.project_detail,name='project_detail'),path('requirements/',views.requirements,name='requirements'),path('requirements/new/',views.requirement_create,name='requirement_create'),path('requirements/<int:pk>/',views.requirement_detail,name='requirement_detail'),path('requirements/<int:pk>/bugs/new/',views.bug_create,name='bug_create'),path('bugs/',views.bugs,name='bugs'),path('bugs/<int:pk>/',views.bug_detail,name='bug_detail'),path('attachments/<int:pk>/',views.attachment,name='attachment'),path('notifications/',views.notifications,name='notifications'),path('notifications/read/',views.notifications_read,name='notifications_read'),path('logs/',views.logs,name='logs')]
+from . import views as legacy
+from . import recorder_views as views
+urlpatterns=[
+    path('',views.home,name='dashboard'),
+    path('projects/',legacy.projects,name='projects'),
+    path('projects/new/',legacy.project_create,name='project_create'),
+    path('projects/<int:pk>/',legacy.project_detail,name='project_detail'),
+    path('requirements/',views.requirement_list,name='requirements'),
+    path('requirements/new/',views.requirement_new,name='requirement_create'),
+    path('requirements/<int:pk>/',views.requirement_detail,name='requirement_detail'),
+    path('requirements/<int:requirement_pk>/bugs/new/',views.bug_edit,name='bug_create'),
+    path('bugs/',views.bug_list,name='bugs'),
+    path('bugs/new/',views.bug_edit,name='bug_new'),
+    path('bugs/<int:pk>/',views.bug_edit,name='bug_detail'),
+    path('attachments/<int:pk>/',legacy.attachment,name='attachment'),
+    path('notifications/',legacy.notifications,name='notifications'),
+    path('notifications/read/',legacy.notifications_read,name='notifications_read'),
+    path('logs/',legacy.logs,name='logs'),
+    path('connections/',views.connections,name='connections'),
+    path('connections/<int:pk>/toggle/',views.connection_toggle,name='connection_toggle'),
+    path('api/operations/ingest/',views.receive_data,name='receive_data'),
+    path('reports/',views.reports,name='reports'),
+    path('reports/<int:pk>/',views.report_detail,name='report_detail'),
+    path('reports/<int:pk>/archive/',views.report_archive,name='report_archive'),
+    path('reports/<int:pk>/download/<str:format>/',views.report_download,name='report_download'),
+    path('records/<str:kind>/',views.entity_list,name='entity_list'),
+    path('records/<str:kind>/new/',views.entity_new,name='entity_new'),
+    path('records/<str:kind>/<int:pk>/',views.entity_detail,name='entity_detail'),
+]

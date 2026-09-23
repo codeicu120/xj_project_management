@@ -19,7 +19,7 @@ def projects_for(user):
     qs=Project.objects.all()
     return qs if user.is_superuser else qs.filter(Q(owner=user)|Q(memberships__user=user)).distinct()
 def req_for(user): return Requirement.objects.filter(project__in=projects_for(user)).select_related('owner','project')
-def base(request): return {'can_access_admin': bool(admin.site.get_app_list(request)) if request.user.is_active and request.user.is_staff else False, 'nav_projects':projects_for(request.user),'unread':Notification.objects.filter(user=request.user,read=False).count()}
+def base(request): return {'can_write': request.user.is_superuser, 'title': '项目与系统配置', 'can_access_admin': bool(admin.site.get_app_list(request)) if request.user.is_active and request.user.is_staff else False, 'nav_projects':projects_for(request.user),'unread':Notification.objects.filter(user=request.user,read=False).count()}
 def page(request,template,**context):
     query=request.GET.copy(); query.pop('page',None)
     return render(request,'tracker/'+template,{**base(request),'page_query':query.urlencode()+'&' if query else '',**context})
@@ -58,13 +58,13 @@ def dashboard(request):
 def projects(request): return page(request,'projects.html',active='projects',projects=projects_for(request.user))
 @login_required
 def project_create(request):
-    if not (request.user.is_staff or request.user.is_superuser): raise PermissionDenied
+    if not request.user.is_superuser: raise PermissionDenied
     form=ProjectForm(request.POST or None)
     if request.method=='POST' and form.is_valid():
         with transaction.atomic():
             project=form.save()
-            for user in form.cleaned_data['members']: Membership.objects.get_or_create(project=project,user=user,role='需求提起人')
-            for role,_ in ROLES: Membership.objects.get_or_create(project=project,user=project.owner,role=role)
+            for user in form.cleaned_data['members']: Membership.objects.get_or_create(project=project,user=user,role='记录人员')
+            Membership.objects.get_or_create(project=project,user=project.owner,role='记录人员')
             audit(request.user,project,'创建项目',project.name)
         return redirect('project_detail',pk=project.pk)
     return page(request,'form.html',active='projects',title='创建项目',subtitle='建立项目空间，集中管理需求与交付。',form=form)

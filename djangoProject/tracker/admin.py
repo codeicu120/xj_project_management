@@ -29,4 +29,4 @@ class ReadOnlyAdmin(admin.ModelAdmin):
     def has_add_permission(self,request): return False
     def has_change_permission(self,request,obj=None): return False
     def has_delete_permission(self,request,obj=None): return False
-for model in [Requirement,Record,Bug,BugEvent,Attachment,Audit]: admin.site.register(model,ReadOnlyAdmin)
+for model in [Requirement,Record,Bug,BugEvent,Attachment,Audit,Confirmation,Review,DailyData,Anomaly,Asset,Journal,Report,SyncRun]: admin.site.register(model,ReadOnlyAdmin)
