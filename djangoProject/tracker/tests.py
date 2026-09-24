@@ -233,3 +233,46 @@ class RecorderTests(TestCase):
             response=self.client.get(f'/reports/{report.pk}/download/{format}/')
             self.assertEqual(response.status_code,200); self.assertIn('attachment;',response['Content-Disposition'])
         self.client.post(f'/reports/{report.pk}/archive/'); report.refresh_from_db(); self.assertIsNotNone(report.archived_at)
+    def test_report_history_optional_description_renders_without_changing_snapshot(self):
+        report=self.report()
+        for payload,expected in [
+            ({'note':'验收模拟结论：原因仍未确认'},'验收模拟结论：原因仍未确认'),
+            ({'description':'原始登记说明'},'原始登记说明'),
+            ({'note':'优先显示追加意见','description':'原始说明'},'优先显示追加意见'),
+            ({'note':'','description':'空意见回退原始说明'},'空意见回退原始说明'),
+            ({},'暂无说明'),
+            ({'note':None,'description':None},'暂无说明'),
+        ]:
+            with self.subTest(payload=payload):
+                report.snapshot['histories']=[{'project':'测试项目','action':'追加核查','payload':payload}]
+                report.save(update_fields=['snapshot'])
+                before=report.snapshot
+                response=self.client.get(f'/reports/{report.pk}/')
+                self.assertContains(response,expected)
+                report.refresh_from_db()
+                self.assertEqual(report.snapshot,before)
+    def test_project_detail_handles_business_and_legacy_owners(self):
+        for business_owner,owner,expected in [
+            ('业务负责人甲',None,'业务负责人甲'),
+            ('',self.recorder,'recorder'),
+            ('',None,'未填写'),
+        ]:
+            with self.subTest(business_owner=business_owner,owner=owner):
+                self.req.business_owner=business_owner
+                self.req.owner=owner
+                self.req.save(update_fields=['business_owner','owner'])
+                self.assertContains(self.client.get(f'/projects/{self.project.pk}/'),expected)
+
+    def test_report_preview_with_real_optional_history_payloads(self):
+        anomaly=create_entity(self.recorder,'anomalies',dict(project=self.project,title='历史波动',metric='访问',provider='运营',source='日报',description='初始核查说明'))
+        update_entity(self.recorder,'anomalies',anomaly.pk,dict(revision=1,status='working',provider='运营',source='群反馈',note='新增核查意见',occurred_at=None))
+        asset=create_entity(self.recorder,'assets',dict(project=self.project,name='示例域名',kind='domain',business_owner='运维',expires_on=timezone.localdate(),cost=Decimal('10'),purpose='站点'))
+        update_entity(self.recorder,'assets',asset.pk,dict(revision=1,provider='运维',handled_on=timezone.localdate(),expires_on=timezone.localdate()+timedelta(days=365),cost=Decimal('15'),source='续费凭据',note='',verified=True))
+        report=self.report()
+        response=self.client.get(f'/reports/{report.pk}/')
+        self.assertContains(response,'新增核查意见')
+        self.assertContains(response,'初始核查说明')
+        self.assertContains(response,'暂无说明')
+        for format in ['pdf','xlsx','csv','zip']:
+            with self.subTest(format=format):
+                self.assertEqual(self.client.get(f'/reports/{report.pk}/download/{format}/').status_code,200)
